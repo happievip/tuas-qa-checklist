@@ -1,0 +1,1634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ANBROS Tuas Plant — QA/QC Inline Inspection</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- SheetJS (xlsx.full.min.js) for multi-sheet Excel export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- jsPDF & AutoTable for PDF report generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f5fa',
+              100: '#e1ecf5',
+              700: '#1b3b5f',
+              800: '#102742',
+              900: '#0b192b',
+              accent: '#f59e0b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Prevent accidental pull-to-refresh on mobile while signing or swiping */
+    body {
+      overscroll-behavior-y: contain;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .hide-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .sig-canvas {
+      touch-action: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen flex flex-col pb-24">
+
+  <!-- TOP APP HEADER -->
+  <header class="bg-brand-900 text-white shadow-md sticky top-0 z-40 border-b border-brand-700">
+    <div class="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-between">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow-inner">
+          <i class="fa-solid fa-clipboard-check text-lg"></i>
+        </div>
+        <div>
+          <h1 class="text-xs font-semibold tracking-wider text-slate-300 uppercase">ANBROS INDUSTRIES (S) PTE LTD</h1>
+          <div class="flex items-center space-x-2">
+            <span class="text-sm font-bold text-white tracking-tight">TUAS PLANT QA/QC</span>
+            <span class="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono font-medium">INLINE INSPECTION</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Auto-Save status badge and Quick Reset -->
+      <div class="flex items-center space-x-2">
+        <span id="saveStatusBadge" class="hidden sm:inline-flex items-center text-[11px] text-slate-300 font-mono">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span> Saved
+        </span>
+        <button onclick="confirmResetAll()" class="p-2 text-slate-300 hover:text-rose-400 transition" title="Clear/Reset Form">
+          <i class="fa-solid fa-arrow-rotate-left"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-4xl mx-auto w-full px-3 pt-3 flex-1">
+
+    <!-- METADATA CARD (Collapsible & Persistent) -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-3.5 mb-3 transition">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-sliders text-brand-700 text-sm"></i>
+          <span class="text-xs font-bold uppercase text-slate-700 tracking-wider">Inspection Metadata</span>
+        </div>
+        <span class="text-[11px] text-slate-400" id="liveClock">--:--:--</span>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+        <!-- Date -->
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">Date</label>
+          <input type="date" id="metaDate" onchange="handleDateChange(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium focus:ring-2 focus:ring-brand-700 outline-none">
+        </div>
+
+        <!-- Day -->
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">Day</label>
+          <input type="text" id="metaDay" readonly class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 outline-none cursor-not-allowed">
+        </div>
+
+        <!-- Time IN -->
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">Time (IN)</label>
+          <div class="flex space-x-1">
+            <input type="time" id="metaTime" onchange="triggerAutoSave()" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium focus:ring-2 focus:ring-brand-700 outline-none">
+            <button onclick="stampCurrentTime()" class="px-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-slate-700 text-xs font-bold" title="Now">
+              <i class="fa-regular fa-clock"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Personnel -->
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">QA Personnel</label>
+          <select id="metaPersonnel" onchange="handlePersonnelChange(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium focus:ring-2 focus:ring-brand-700 outline-none">
+            <option value="Shan">Shan</option>
+            <option value="Mani">Mani</option>
+            <option value="Joko">Joko</option>
+            <option value="Pravin">Pravin</option>
+            <option value="Other">Other...</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Custom Personnel Input if "Other" is chosen -->
+      <div id="otherPersonnelWrap" class="hidden mt-2">
+        <label class="block text-[11px] font-semibold text-slate-600 mb-1">Enter Name</label>
+        <input type="text" id="metaPersonnelOther" placeholder="Inspector Full Name" oninput="triggerAutoSave()" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-brand-700 outline-none">
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-2.5 text-xs">
+        <!-- Line Selector -->
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">Production Line</label>
+          <div class="grid grid-cols-2 gap-1.5 p-0.5 bg-slate-100 rounded-lg">
+            <button type="button" id="btnLine1" onclick="setLine('Line 1')" class="py-1.5 rounded-md font-bold transition text-xs bg-white text-brand-900 shadow-sm border border-slate-200">Line 1</button>
+            <button type="button" id="btnLine2" onclick="setLine('Line 2')" class="py-1.5 rounded-md font-bold transition text-xs text-slate-500 hover:text-slate-800">Line 2</button>
+          </div>
+        </div>
+
+        <!-- Level Selector -->
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">Floor Level</label>
+          <div class="grid grid-cols-2 gap-1.5 p-0.5 bg-slate-100 rounded-lg">
+            <button type="button" id="btnLevel1" onclick="setLevel('Level 1')" class="py-1.5 rounded-md font-bold transition text-xs bg-white text-brand-900 shadow-sm border border-slate-200">Level 1</button>
+            <button type="button" id="btnLevel2" onclick="setLevel('Level 2')" class="py-1.5 rounded-md font-bold transition text-xs text-slate-500 hover:text-slate-800">Level 2</button>
+          </div>
+        </div>
+
+        <!-- Work Order / Batch -->
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">WO / Batch / Product</label>
+          <input type="text" id="metaBatch" placeholder="e.g. WO-8842 / BATCH 04" oninput="triggerAutoSave()" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium focus:ring-2 focus:ring-brand-700 outline-none uppercase">
+        </div>
+      </div>
+    </div>
+
+    <!-- TABS NAVIGATION (Scrollable horizontal pills) -->
+    <div class="flex items-center space-x-1.5 overflow-x-auto hide-scrollbar pb-2 mb-2">
+      <button onclick="switchTab('tab_startup')" id="tabBtn_startup" class="tab-btn px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap bg-brand-800 text-white shadow-sm flex items-center space-x-1.5">
+        <span>① Startup</span>
+        <span id="badge_startup" class="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full">0/0</span>
+      </button>
+
+      <button onclick="switchTab('tab_changeover')" id="tabBtn_changeover" class="tab-btn px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap bg-white text-slate-600 border border-slate-200 flex items-center space-x-1.5">
+        <span>② Changeover</span>
+        <span id="badge_changeover" class="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full">0/0</span>
+      </button>
+
+      <button onclick="switchTab('tab_afterlunch')" id="tabBtn_afterlunch" class="tab-btn px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap bg-white text-slate-600 border border-slate-200 flex items-center space-x-1.5">
+        <span>③ After Lunch</span>
+        <span id="badge_afterlunch" class="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full">0/0</span>
+      </button>
+
+      <button onclick="switchTab('tab_random')" id="tabBtn_random" class="tab-btn px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap bg-white text-slate-600 border border-slate-200 flex items-center space-x-1.5">
+        <span>④ Random</span>
+        <span id="badge_random" class="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full">0/0</span>
+      </button>
+
+      <button onclick="switchTab('tab_endshift')" id="tabBtn_endshift" class="tab-btn px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap bg-white text-slate-600 border border-slate-200 flex items-center space-x-1.5">
+        <span>⑤ End Shift</span>
+        <span id="badge_endshift" class="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full">0/0</span>
+      </button>
+
+      <button onclick="switchTab('tab_summary')" id="tabBtn_summary" class="tab-btn px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap bg-white text-slate-600 border border-slate-200 flex items-center space-x-1.5">
+        <i class="fa-solid fa-chart-pie mr-1"></i> Summary
+      </button>
+    </div>
+
+    <!-- TAB CONTENTS -->
+    <div id="tabContainer" class="space-y-3">
+      <!-- Section checklist content injected dynamically -->
+    </div>
+
+    <!-- SIGNATURE & SIGN-OFF SECTION -->
+    <div class="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-3.5">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-signature text-brand-700"></i>
+          <span class="text-xs font-bold uppercase text-slate-700 tracking-wider">QA Inspector Sign-Off</span>
+        </div>
+        <button onclick="clearSignature()" class="text-xs text-rose-600 font-semibold hover:underline">
+          <i class="fa-solid fa-rotate-left mr-1"></i>Clear Pad
+        </button>
+      </div>
+
+      <div class="border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 relative overflow-hidden">
+        <canvas id="signatureCanvas" class="sig-canvas w-full h-32 block cursor-crosshair"></canvas>
+        <div id="sigPlaceholder" class="absolute inset-0 pointer-events-none flex items-center justify-center text-slate-400 text-xs italic">
+          Sign here with touch or stylus
+        </div>
+      </div>
+      <div class="mt-1.5 flex justify-between items-center text-[11px] text-slate-500">
+        <span>Signed by: <strong id="sigPersonnelLabel" class="text-slate-700">Shan</strong></span>
+        <span id="sigTimestamp" class="font-mono">Not signed yet</span>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- FLOATING QUICK ACTION FOOTER (Optimized for one-handed mobile use) -->
+  <footer class="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 py-2.5 px-3 z-40 shadow-lg">
+    <div class="max-w-4xl mx-auto flex items-center justify-between gap-2">
+      <!-- Pass All Button for current active tab -->
+      <button onclick="passAllActiveTab()" class="px-3.5 py-2.5 bg-emerald-50 active:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-xl font-bold text-xs flex items-center space-x-1.5 shadow-sm active:scale-95 transition">
+        <i class="fa-solid fa-check-double text-emerald-600"></i>
+        <span class="hidden xs:inline">Pass All in</span>
+        <span>Tab</span>
+      </button>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center space-x-1.5 flex-1 justify-end">
+        <!-- Excel Button -->
+        <button onclick="exportToExcel()" class="flex-1 max-w-[120px] py-2.5 bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow transition">
+          <i class="fa-solid fa-file-excel"></i>
+          <span>Excel</span>
+        </button>
+
+        <!-- PDF Button -->
+        <button onclick="generatePDF()" class="flex-1 max-w-[120px] py-2.5 bg-rose-700 hover:bg-rose-800 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow transition">
+          <i class="fa-solid fa-file-pdf"></i>
+          <span>PDF</span>
+        </button>
+
+        <!-- Share Button -->
+        <button onclick="shareInspectionReport()" class="py-2.5 px-3.5 bg-brand-800 hover:bg-brand-900 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1 shadow transition" title="Share via WhatsApp or Email">
+          <i class="fa-solid fa-share-nodes"></i>
+          <span class="hidden sm:inline">Share</span>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastContainer" class="fixed top-14 inset-x-0 flex flex-col items-center pointer-events-none z-50 px-4 space-y-2"></div>
+
+  <!-- CONFIRMATION / GENERIC MODAL -->
+  <div id="appModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-100">
+      <div id="modalIcon" class="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xl mb-3">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <h3 id="modalTitle" class="text-base font-bold text-slate-800 mb-1">Reset Inspection?</h3>
+      <p id="modalDesc" class="text-xs text-slate-600 mb-4">All current inputs, remarks, and signature will be cleared. This cannot be undone.</p>
+      <div class="flex space-x-2">
+        <button id="modalBtnCancel" onclick="closeModal()" class="flex-1 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Cancel</button>
+        <button id="modalBtnConfirm" class="flex-1 py-2 rounded-xl text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ==========================================================================
+       CHECKLIST DATA MODEL (Tuas Plant Template Structure)
+       ========================================================================== */
+    const CHECKLIST_SECTIONS = [
+      {
+        id: 'tab_startup',
+        title: 'STARTUP CHECK',
+        shortTitle: 'Startup',
+        desc: 'Pre-operational verification before line kickoff',
+        categories: [
+          {
+            name: 'GMP & Line Hygiene',
+            items: [
+              { id: 's1', label: 'Production area clean, swept, and free of foreign debris/powder spills' },
+              { id: 's2', label: 'Line operators wearing complete clean PPE (Hairnet, Mask, Uniform, Safety Shoes)' },
+              { id: 's3', label: 'Hand washing & sanitizing station verified active with soap and sanitizer' }
+            ]
+          },
+          {
+            name: 'Equipment & Tooling Clearance',
+            items: [
+              { id: 's4', label: 'Line clearance done: Previous batch materials/labels removed' },
+              { id: 's5', label: 'Hoppers, conveyor belts, chutes, and nozzles sanitized & dry' },
+              { id: 's6', label: 'Foreign matter defense: Sieve/magnets inspected, clean & in position' }
+            ]
+          },
+          {
+            name: 'Product & Packaging Verification',
+            items: [
+              { id: 's7', label: 'Correct raw material / bulk product matches current Work Order' },
+              { id: 's8', label: 'Packaging material, cartons, and coding ribbon verified correct' },
+              { id: 's9', label: 'Date coding verification (EXP, MFD, LOT) sample checked & legible' }
+            ]
+          }
+        ]
+      },
+      {
+        id: 'tab_changeover',
+        title: 'CHANGE WORK ORDER CHECK',
+        shortTitle: 'Changeover',
+        desc: 'Verification between batch / product transitions',
+        categories: [
+          {
+            name: 'Line Clearance & Purge',
+            items: [
+              { id: 'c1', label: 'Previous batch finished goods, cartons, and remaining labels 100% cleared' },
+              { id: 'c2', label: 'Dumping hopper & inline piping purged / vacuumed' },
+              { id: 'c3', label: 'Machinery wipe down and sanitization completed per SOP' }
+            ]
+          },
+          {
+            name: 'New Recipe & Parameter Setup',
+            items: [
+              { id: 'c4', label: 'New Work Order / Batch verified against Master Production Record' },
+              { id: 'c5', label: 'Filling machine weight calibration / target settings locked' },
+              { id: 'c6', label: 'Inkjet/thermal printer code updated with new lot & expiry dates' }
+            ]
+          },
+          {
+            name: 'First Piece Quality Approval',
+            items: [
+              { id: 'c7', label: 'Initial sample bags/pouches weighed and within allowable tolerances' },
+              { id: 'c8', label: 'Seal integrity test (air tightness & visual crimp) passed' }
+            ]
+          }
+        ]
+      },
+      {
+        id: 'tab_afterlunch',
+        title: 'AFTER LUNCH CHECK',
+        shortTitle: 'After Lunch',
+        desc: 'Post-break restart integrity verification',
+        categories: [
+          {
+            name: 'Personnel & Sanitation Restart',
+            items: [
+              { id: 'l1', label: 'All returning personnel washed and sanitized hands before re-entry' },
+              { id: 'l2', label: 'Fresh masks/gloves donned where required' }
+            ]
+          },
+          {
+            name: 'Machine & Environment Check',
+            items: [
+              { id: 'l3', label: 'No stagnant material contamination or temperature shifts during break' },
+              { id: 'l4', label: 'Sealer heating elements at optimal operating temperature' },
+              { id: 'l5', label: 'Conveyor track clear and running smoothly without jams' }
+            ]
+          },
+          {
+            name: 'In-Process QA Verification',
+            items: [
+              { id: 'l6', label: 'First restart batch inspected for proper seal, weight, and coding' }
+            ]
+          }
+        ]
+      },
+      {
+        id: 'tab_random',
+        title: 'RANDOM IN-LINE INSPECTION',
+        shortTitle: 'Random Check',
+        desc: 'Routine mid-shift auditing of plant operations & stations',
+        categories: [
+          {
+            name: 'GMP & Personnel Monitoring',
+            items: [
+              { id: 'r1', label: 'No jewelry, exposed personal belongings, or food/drinks in production zone' },
+              { id: 'r2', label: 'Waste bins covered and not overflowing' }
+            ]
+          },
+          {
+            name: 'Dumping Station P022',
+            items: [
+              { id: 'r3', label: 'Station P022 clean; raw bag external surface wiped before dumping' },
+              { id: 'r4', label: 'Protective grate/mesh intact; dust extraction hood functional' }
+            ]
+          },
+          {
+            name: 'Filling Station P014 / P017',
+            items: [
+              { id: 'r5', label: 'Filling nozzle alignment centered; no drip or powder dispersion' },
+              { id: 'r6', label: 'Periodic weight checks recorded in production log sheet' }
+            ]
+          },
+          {
+            name: 'Equipment Hanging & Physical Safety',
+            items: [
+              { id: 'r7', label: 'Overhead cables, pipes, and ducting clean without loose brackets or flakes' },
+              { id: 'r8', label: 'Fasteners, bolts, and guards tightened; no missing hardware' }
+            ]
+          },
+          {
+            name: 'AHU & Environmental Checks',
+            items: [
+              { id: 'r9', label: 'Room differential pressure and temperature within cleanroom limits' },
+              { id: 'r10', label: 'Air supply grills clean with no condensate accumulation' }
+            ]
+          },
+          {
+            name: 'Sampling & Foreign Matter Control',
+            items: [
+              { id: 'r11', label: 'Inline magnet/detector challenge test performed and passed' },
+              { id: 'r12', label: 'Retain / QC lab samples collected, labelled and stored properly' }
+            ]
+          }
+        ]
+      },
+      {
+        id: 'tab_endshift',
+        title: 'END OF SHIFT CHECK',
+        shortTitle: 'End of Shift',
+        desc: 'Shutdown, reconciliation, and line handover',
+        categories: [
+          {
+            name: 'Production Closedown & Reconciliation',
+            items: [
+              { id: 'e1', label: 'Total units produced reconciled against raw material usage' },
+              { id: 'e2', label: 'Damaged / rejected packs segregated, logged, and scrapped' }
+            ]
+          },
+          {
+            name: 'Deep Cleaning & Sanitization',
+            items: [
+              { id: 'e3', label: 'Hoppers emptied; remaining bulk powder vacuumed and sealed in bin' },
+              { id: 'e4', label: 'Equipment surfaces washed/wiped with approved sanitizer' },
+              { id: 'e5', label: 'Floor scrubbed, drains cleared, and trash bins disposed to compactor' }
+            ]
+          },
+          {
+            name: 'Records & Shift Handover',
+            items: [
+              { id: 'e6', label: 'Production batch record and inline check sheets completed & signed' },
+              { id: 'e7', label: 'Machinery safety locks engaged and main utilities safely isolated' },
+              { id: 'e8', label: 'Key issues & equipment remarks verbally briefed to incoming shift' }
+            ]
+          }
+        ]
+      }
+    ];
+
+    // Canned Quick Remarks for immediate mobile insertion
+    const QUICK_REMARKS = [
+      'Cleaned on spot',
+      'Corrected immediately',
+      'Reported to Line Leader',
+      'Mesh verified clean',
+      'Re-calibrated weight scale',
+      'Reprinted coding sample',
+      'Approved after re-test'
+    ];
+
+    /* ==========================================================================
+       APPLICATION STATE & LOCAL STORAGE SYNC
+       ========================================================================== */
+    const STORAGE_KEY = 'TUAS_QA_INSPECTION_V1';
+
+    let appState = {
+      meta: {
+        date: '',
+        day: '',
+        time: '',
+        personnel: 'Shan',
+        personnelOther: '',
+        line: 'Line 1',
+        level: 'Level 1',
+        batch: ''
+      },
+      checks: {}, // key: itemId => { status: 'PASS' | 'FAIL' | 'NA', remarks: '' }
+      signature: null,
+      signedTimestamp: null,
+      currentTab: 'tab_startup'
+    };
+
+    /* ==========================================================================
+       INITIALIZATION
+       ========================================================================== */
+    window.addEventListener('DOMContentLoaded', () => {
+      initDateTime();
+      loadFromStorage();
+      setupSignaturePad();
+      renderAllTabs();
+      switchTab(appState.currentTab || 'tab_startup');
+      updateAllBadges();
+      startLiveClock();
+    });
+
+    function initDateTime() {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const todayStr = `${yyyy}-${mm}-${dd}`;
+
+      if (!appState.meta.date) {
+        appState.meta.date = todayStr;
+      }
+      if (!appState.meta.day) {
+        appState.meta.day = getDayName(todayStr);
+      }
+      if (!appState.meta.time) {
+        appState.meta.time = formatTime(now);
+      }
+
+      document.getElementById('metaDate').value = appState.meta.date;
+      document.getElementById('metaDay').value = appState.meta.day;
+      document.getElementById('metaTime').value = appState.meta.time;
+    }
+
+    function startLiveClock() {
+      const clockEl = document.getElementById('liveClock');
+      setInterval(() => {
+        const d = new Date();
+        clockEl.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      }, 1000);
+    }
+
+    function stampCurrentTime() {
+      const now = new Date();
+      const timeStr = formatTime(now);
+      document.getElementById('metaTime').value = timeStr;
+      appState.meta.time = timeStr;
+      triggerAutoSave();
+      showToast('Timestamp updated', 'info');
+    }
+
+    function formatTime(date) {
+      return date.toTimeString().substring(0, 5);
+    }
+
+    function getDayName(dateStr) {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      return d.toLocaleDateString('en-US', { weekday: 'long' });
+    }
+
+    function handleDateChange(val) {
+      appState.meta.date = val;
+      const day = getDayName(val);
+      appState.meta.day = day;
+      document.getElementById('metaDay').value = day;
+      triggerAutoSave();
+    }
+
+    function handlePersonnelChange(val) {
+      appState.meta.personnel = val;
+      const otherWrap = document.getElementById('otherPersonnelWrap');
+      if (val === 'Other') {
+        otherWrap.classList.remove('hidden');
+      } else {
+        otherWrap.classList.add('hidden');
+      }
+      updateSignatureLabel();
+      triggerAutoSave();
+    }
+
+    function updateSignatureLabel() {
+      const name = appState.meta.personnel === 'Other' && appState.meta.personnelOther 
+        ? appState.meta.personnelOther 
+        : appState.meta.personnel;
+      document.getElementById('sigPersonnelLabel').textContent = name || 'Inspector';
+    }
+
+    function setLine(lineVal) {
+      appState.meta.line = lineVal;
+      const b1 = document.getElementById('btnLine1');
+      const b2 = document.getElementById('btnLine2');
+      if (lineVal === 'Line 1') {
+        b1.className = 'py-1.5 rounded-md font-bold transition text-xs bg-white text-brand-900 shadow-sm border border-slate-200';
+        b2.className = 'py-1.5 rounded-md font-bold transition text-xs text-slate-500 hover:text-slate-800';
+      } else {
+        b2.className = 'py-1.5 rounded-md font-bold transition text-xs bg-white text-brand-900 shadow-sm border border-slate-200';
+        b1.className = 'py-1.5 rounded-md font-bold transition text-xs text-slate-500 hover:text-slate-800';
+      }
+      triggerAutoSave();
+    }
+
+    function setLevel(lvlVal) {
+      appState.meta.level = lvlVal;
+      const b1 = document.getElementById('btnLevel1');
+      const b2 = document.getElementById('btnLevel2');
+      if (lvlVal === 'Level 1') {
+        b1.className = 'py-1.5 rounded-md font-bold transition text-xs bg-white text-brand-900 shadow-sm border border-slate-200';
+        b2.className = 'py-1.5 rounded-md font-bold transition text-xs text-slate-500 hover:text-slate-800';
+      } else {
+        b2.className = 'py-1.5 rounded-md font-bold transition text-xs bg-white text-brand-900 shadow-sm border border-slate-200';
+        b1.className = 'py-1.5 rounded-md font-bold transition text-xs text-slate-500 hover:text-slate-800';
+      }
+      triggerAutoSave();
+    }
+
+    /* ==========================================================================
+       RENDER CHECKLIST VIEW
+       ========================================================================== */
+    function renderAllTabs() {
+      const container = document.getElementById('tabContainer');
+      container.innerHTML = '';
+
+      CHECKLIST_SECTIONS.forEach(sec => {
+        const secDiv = document.createElement('div');
+        secDiv.id = `panel_${sec.id}`;
+        secDiv.className = 'hidden space-y-3';
+
+        // Section header card
+        const headerCard = `
+          <div class="bg-gradient-to-r from-brand-800 to-brand-700 rounded-xl p-3.5 text-white shadow-sm flex items-center justify-between">
+            <div>
+              <h2 class="text-xs font-bold tracking-wider uppercase text-amber-400">${sec.title}</h2>
+              <p class="text-[11px] text-slate-200 mt-0.5">${sec.desc}</p>
+            </div>
+            <button onclick="passAllInSection('${sec.id}')" class="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white rounded-lg text-xs font-bold shadow transition flex items-center space-x-1">
+              <i class="fa-solid fa-check"></i>
+              <span>Pass All</span>
+            </button>
+          </div>
+        `;
+        secDiv.innerHTML += headerCard;
+
+        // Categories & Items
+        sec.categories.forEach(cat => {
+          let catHtml = `
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div class="bg-slate-50 px-3.5 py-2 border-b border-slate-200 flex items-center justify-between">
+                <span class="text-xs font-bold text-slate-700 tracking-wide uppercase">${cat.name}</span>
+                <span class="text-[10px] text-slate-400 font-medium">${cat.items.length} items</span>
+              </div>
+              <div class="divide-y divide-slate-100">
+          `;
+
+          cat.items.forEach(item => {
+            const state = appState.checks[item.id] || { status: null, remarks: '' };
+            const isFail = state.status === 'FAIL';
+            const isPass = state.status === 'PASS';
+            const isNA = state.status === 'NA';
+
+            catHtml += `
+              <div id="card_${item.id}" class="p-3.5 transition-colors ${isFail ? 'bg-rose-50/70 border-l-4 border-l-rose-500' : ''}">
+                <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+                  <div class="flex-1 pr-2">
+                    <p class="text-xs font-medium text-slate-800 leading-snug">${item.label}</p>
+                  </div>
+
+                  <!-- Segmented Touch Action Buttons -->
+                  <div class="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 self-start sm:self-auto shrink-0 shadow-inner">
+                    <button type="button" onclick="setItemStatus('${item.id}', 'PASS')" id="btn_${item.id}_PASS"
+                      class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${isPass ? 'bg-emerald-600 text-white shadow' : 'text-slate-600 hover:text-emerald-700'}">
+                      <i class="fa-solid fa-check mr-1"></i>PASS
+                    </button>
+                    <button type="button" onclick="setItemStatus('${item.id}', 'FAIL')" id="btn_${item.id}_FAIL"
+                      class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${isFail ? 'bg-rose-600 text-white shadow' : 'text-slate-600 hover:text-rose-700'}">
+                      <i class="fa-solid fa-xmark mr-1"></i>FAIL
+                    </button>
+                    <button type="button" onclick="setItemStatus('${item.id}', 'NA')" id="btn_${item.id}_NA"
+                      class="px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all ${isNA ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-slate-700'}">
+                      N/A
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Corrective Action & Remarks Input (Revealed on Fail or when has remarks) -->
+                <div id="remarkWrap_${item.id}" class="${isFail || state.remarks ? 'block' : 'hidden'} mt-2.5 pt-2.5 border-t border-slate-100">
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="text-[11px] font-bold ${isFail ? 'text-rose-700' : 'text-slate-500'} flex items-center">
+                      <i class="fa-solid fa-circle-exclamation mr-1 text-xs"></i> Remarks / Corrective Action
+                    </label>
+                    <span class="text-[10px] text-slate-400">Required if Fail</span>
+                  </div>
+                  
+                  <input type="text" id="remarkInput_${item.id}" value="${escapeHtml(state.remarks || '')}"
+                    placeholder="Describe issue, deviation, or corrective action..."
+                    oninput="handleRemarkInput('${item.id}', this.value)"
+                    class="w-full bg-white border ${isFail ? 'border-rose-300 focus:ring-rose-500' : 'border-slate-200 focus:ring-brand-700'} rounded-lg p-2 text-xs focus:ring-2 outline-none">
+
+                  <!-- Quick Chips for Fast Mobile Input -->
+                  <div class="flex flex-wrap gap-1 mt-1.5">
+                    ${QUICK_REMARKS.map(chip => `
+                      <button type="button" onclick="appendQuickRemark('${item.id}', '${chip}')" class="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200 transition">
+                        + ${chip}
+                      </button>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+            `;
+          });
+
+          catHtml += `</div></div>`;
+          secDiv.innerHTML += catHtml;
+        });
+
+        container.appendChild(secDiv);
+      });
+
+      // Render Summary Panel as well
+      renderSummaryTab();
+    }
+
+    function renderSummaryTab() {
+      const container = document.getElementById('tabContainer');
+      const sumDiv = document.createElement('div');
+      sumDiv.id = 'panel_tab_summary';
+      sumDiv.className = 'hidden space-y-3';
+      sumDiv.innerHTML = `
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+          <div class="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
+            <div>
+              <h2 class="text-xs font-bold uppercase tracking-wider text-slate-700">Daily Inline Quality Dashboard</h2>
+              <p class="text-[11px] text-slate-400">Comprehensive overview of all production checkpoint gates</p>
+            </div>
+            <span class="text-xs font-bold text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg border border-brand-100" id="summaryLineBadge">Line 1 • Level 1</span>
+          </div>
+
+          <!-- KPI Metric Cards -->
+          <div class="grid grid-cols-3 gap-2.5 mb-4 text-center">
+            <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+              <span class="block text-2xl font-black text-emerald-600" id="kpiPassedCount">0</span>
+              <span class="text-[10px] font-bold text-emerald-800 uppercase">Passed Checks</span>
+            </div>
+            <div class="bg-rose-50 border border-rose-200 rounded-xl p-3">
+              <span class="block text-2xl font-black text-rose-600" id="kpiFailedCount">0</span>
+              <span class="text-[10px] font-bold text-rose-800 uppercase">Fails / Action</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <span class="block text-2xl font-black text-slate-600" id="kpiPendingCount">0</span>
+              <span class="text-[10px] font-bold text-slate-600 uppercase">Pending Items</span>
+            </div>
+          </div>
+
+          <!-- Section Breakdown Table -->
+          <div class="border border-slate-200 rounded-xl overflow-hidden mb-4">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-bold text-[10px]">
+                <tr>
+                  <th class="py-2.5 px-3">Gate Section</th>
+                  <th class="py-2.5 px-2 text-center">Pass</th>
+                  <th class="py-2.5 px-2 text-center">Fail</th>
+                  <th class="py-2.5 px-2 text-center">N/A</th>
+                  <th class="py-2.5 px-3 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody id="summaryTableBody" class="divide-y divide-slate-100">
+                <!-- Injected via updateSummaryMetrics() -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Fails & Deviations Summary Box -->
+          <div id="deviationsCard" class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs">
+            <div class="font-bold text-slate-700 mb-1 flex items-center">
+              <i class="fa-solid fa-list-check text-brand-700 mr-1.5"></i>
+              Recorded Issues & Corrective Notes
+            </div>
+            <div id="deviationsList" class="space-y-1.5 text-slate-600 text-[11px] mt-2">
+              <p class="text-slate-400 italic">No failures or deviations currently logged.</p>
+            </div>
+          </div>
+        </div>
+      `;
+      container.appendChild(sumDiv);
+    }
+
+    /* ==========================================================================
+       USER INTERACTION HANDLERS
+       ========================================================================== */
+    function setItemStatus(itemId, status) {
+      if (!appState.checks[itemId]) {
+        appState.checks[itemId] = { status: null, remarks: '' };
+      }
+
+      // If clicked again on the same status, toggle off
+      if (appState.checks[itemId].status === status) {
+        appState.checks[itemId].status = null;
+      } else {
+        appState.checks[itemId].status = status;
+      }
+
+      updateItemCardUI(itemId);
+      updateAllBadges();
+      triggerAutoSave();
+    }
+
+    function updateItemCardUI(itemId) {
+      const state = appState.checks[itemId] || { status: null, remarks: '' };
+      const card = document.getElementById(`card_${itemId}`);
+      const btnP = document.getElementById(`btn_${itemId}_PASS`);
+      const btnF = document.getElementById(`btn_${itemId}_FAIL`);
+      const btnN = document.getElementById(`btn_${itemId}_NA`);
+      const rWrap = document.getElementById(`remarkWrap_${itemId}`);
+      const rInput = document.getElementById(`remarkInput_${itemId}`);
+
+      if (!card || !btnP || !btnF || !btnN) return;
+
+      // Reset button classes
+      btnP.className = 'px-3 py-1.5 text-xs font-bold rounded-lg transition-all text-slate-600 hover:text-emerald-700';
+      btnF.className = 'px-3 py-1.5 text-xs font-bold rounded-lg transition-all text-slate-600 hover:text-rose-700';
+      btnN.className = 'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all text-slate-400 hover:text-slate-700';
+      card.classList.remove('bg-rose-50/70', 'border-l-4', 'border-l-rose-500');
+
+      if (state.status === 'PASS') {
+        btnP.className = 'px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-emerald-600 text-white shadow';
+        if (!state.remarks) rWrap.classList.add('hidden');
+      } else if (state.status === 'FAIL') {
+        btnF.className = 'px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-rose-600 text-white shadow';
+        card.classList.add('bg-rose-50/70', 'border-l-4', 'border-l-rose-500');
+        rWrap.classList.remove('hidden');
+        if (rInput && !rInput.value.trim()) {
+          rInput.focus();
+        }
+      } else if (state.status === 'NA') {
+        btnN.className = 'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all bg-slate-600 text-white shadow';
+        if (!state.remarks) rWrap.classList.add('hidden');
+      } else {
+        if (!state.remarks) rWrap.classList.add('hidden');
+      }
+    }
+
+    function handleRemarkInput(itemId, val) {
+      if (!appState.checks[itemId]) {
+        appState.checks[itemId] = { status: null, remarks: '' };
+      }
+      appState.checks[itemId].remarks = val;
+      triggerAutoSave();
+    }
+
+    function appendQuickRemark(itemId, text) {
+      const input = document.getElementById(`remarkInput_${itemId}`);
+      if (!input) return;
+      let current = input.value.trim();
+      if (current) {
+        if (!current.includes(text)) {
+          input.value = `${current}; ${text}`;
+        }
+      } else {
+        input.value = text;
+      }
+      handleRemarkInput(itemId, input.value);
+    }
+
+    function passAllInSection(sectionId) {
+      const section = CHECKLIST_SECTIONS.find(s => s.id === sectionId);
+      if (!section) return;
+
+      section.categories.forEach(cat => {
+        cat.items.forEach(item => {
+          if (!appState.checks[item.id]) {
+            appState.checks[item.id] = { status: 'PASS', remarks: '' };
+          } else {
+            appState.checks[item.id].status = 'PASS';
+          }
+          updateItemCardUI(item.id);
+        });
+      });
+
+      updateAllBadges();
+      triggerAutoSave();
+      showToast(`Passed all items in ${section.shortTitle}`, 'success');
+    }
+
+    function passAllActiveTab() {
+      if (appState.currentTab === 'tab_summary') {
+        showToast('Select a checklist tab to pass all items', 'info');
+        return;
+      }
+      passAllInSection(appState.currentTab);
+    }
+
+    /* ==========================================================================
+       TAB SWITCHING & BADGE CALCULATIONS
+       ========================================================================== */
+    function switchTab(tabId) {
+      appState.currentTab = tabId;
+
+      // Hide all panels
+      document.querySelectorAll('#tabContainer > div').forEach(div => div.classList.add('hidden'));
+      const activePanel = document.getElementById(`panel_${tabId}`);
+      if (activePanel) activePanel.classList.remove('hidden');
+
+      // Update tab button styles
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('bg-brand-800', 'text-white', 'shadow-sm');
+        btn.classList.add('bg-white', 'text-slate-600', 'border', 'border-slate-200');
+      });
+
+      const activeBtn = document.getElementById(`tabBtn_${tabId.replace('tab_', '')}`);
+      if (activeBtn) {
+        activeBtn.classList.remove('bg-white', 'text-slate-600', 'border', 'border-slate-200');
+        activeBtn.classList.add('bg-brand-800', 'text-white', 'shadow-sm');
+        activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+
+      if (tabId === 'tab_summary') {
+        updateSummaryMetrics();
+      }
+    }
+
+    function updateAllBadges() {
+      let totalCompleted = 0;
+      let grandTotal = 0;
+
+      CHECKLIST_SECTIONS.forEach(sec => {
+        let secTotal = 0;
+        let secDone = 0;
+        let secFails = 0;
+
+        sec.categories.forEach(c => {
+          c.items.forEach(i => {
+            secTotal++;
+            const s = appState.checks[i.id]?.status;
+            if (s) secDone++;
+            if (s === 'FAIL') secFails++;
+          });
+        });
+
+        grandTotal += secTotal;
+        totalCompleted += secDone;
+
+        const badgeEl = document.getElementById(`badge_${sec.id.replace('tab_', '')}`);
+        if (badgeEl) {
+          badgeEl.textContent = `${secDone}/${secTotal}`;
+          if (secFails > 0) {
+            badgeEl.className = 'text-[10px] bg-rose-500 text-white font-bold px-1.5 py-0.2 rounded-full animate-pulse';
+          } else if (secDone === secTotal) {
+            badgeEl.className = 'text-[10px] bg-emerald-500 text-white font-bold px-1.5 py-0.2 rounded-full';
+          } else {
+            badgeEl.className = 'text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full';
+          }
+        }
+      });
+    }
+
+    function updateSummaryMetrics() {
+      document.getElementById('summaryLineBadge').textContent = `${appState.meta.line} • ${appState.meta.level}`;
+      
+      let passCount = 0;
+      let failCount = 0;
+      let naCount = 0;
+      let totalItems = 0;
+
+      const deviationsList = document.getElementById('deviationsList');
+      deviationsList.innerHTML = '';
+      let failureItemsList = [];
+
+      const tbody = document.getElementById('summaryTableBody');
+      tbody.innerHTML = '';
+
+      CHECKLIST_SECTIONS.forEach(sec => {
+        let secPass = 0, secFail = 0, secNA = 0, secTotal = 0;
+
+        sec.categories.forEach(cat => {
+          cat.items.forEach(item => {
+            secTotal++;
+            totalItems++;
+            const st = appState.checks[item.id] || {};
+            if (st.status === 'PASS') {
+              secPass++;
+              passCount++;
+            } else if (st.status === 'FAIL') {
+              secFail++;
+              failCount++;
+              failureItemsList.push({
+                sec: sec.shortTitle,
+                label: item.label,
+                remarks: st.remarks || 'No remarks recorded'
+              });
+            } else if (st.status === 'NA') {
+              secNA++;
+              naCount++;
+            }
+          });
+        });
+
+        const statusBadge = secFail > 0
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">FAIL (${secFail})</span>`
+          : (secPass + secNA === secTotal)
+            ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">CLEARED</span>`
+            : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">IN PROGRESS</span>`;
+
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50">
+            <td class="py-2 px-3 font-semibold text-slate-700">${sec.shortTitle}</td>
+            <td class="py-2 px-2 text-center text-emerald-600 font-bold">${secPass}</td>
+            <td class="py-2 px-2 text-center text-rose-600 font-bold">${secFail}</td>
+            <td class="py-2 px-2 text-center text-slate-500">${secNA}</td>
+            <td class="py-2 px-3 text-right">${statusBadge}</td>
+          </tr>
+        `;
+      });
+
+      const pendingCount = totalItems - (passCount + failCount + naCount);
+
+      document.getElementById('kpiPassedCount').textContent = passCount;
+      document.getElementById('kpiFailedCount').textContent = failCount;
+      document.getElementById('kpiPendingCount').textContent = pendingCount;
+
+      if (failureItemsList.length > 0) {
+        failureItemsList.forEach(fail => {
+          deviationsList.innerHTML += `
+            <div class="bg-rose-50 border border-rose-200 rounded-lg p-2 text-rose-900">
+              <div class="font-bold flex items-center justify-between text-xs">
+                <span>[${fail.sec}] ${fail.label}</span>
+                <span class="text-[10px] bg-rose-600 text-white px-1.5 py-0.5 rounded">DEFECT</span>
+              </div>
+              <p class="text-[11px] text-rose-700 mt-1"><i class="fa-solid fa-arrow-right mr-1"></i>Action: ${escapeHtml(fail.remarks)}</p>
+            </div>
+          `;
+        });
+      } else {
+        deviationsList.innerHTML = `<p class="text-slate-400 italic">No failures or deviations currently logged. All checked points are conforming.</p>`;
+      }
+    }
+
+    /* ==========================================================================
+       SIGNATURE CANVAS (Touch / Stylus / Mouse)
+       ========================================================================== */
+    let sigCanvas, sigCtx, isDrawing = false, hasSigned = false;
+
+    function setupSignaturePad() {
+      sigCanvas = document.getElementById('signatureCanvas');
+      sigCtx = sigCanvas.getContext('2d');
+
+      resizeSignatureCanvas();
+      window.addEventListener('resize', resizeSignatureCanvas);
+
+      // Mouse events
+      sigCanvas.addEventListener('mousedown', startSign);
+      sigCanvas.addEventListener('mousemove', drawSign);
+      window.addEventListener('mouseup', endSign);
+
+      // Touch events
+      sigCanvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = sigCanvas.getBoundingClientRect();
+        isDrawing = true;
+        sigCtx.beginPath();
+        sigCtx.moveTo(touch.clientX - rect.left, touch.clientY - rect.top);
+        document.getElementById('sigPlaceholder').style.display = 'none';
+      }, { passive: false });
+
+      sigCanvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (!isDrawing) return;
+        const touch = e.touches[0];
+        const rect = sigCanvas.getBoundingClientRect();
+        sigCtx.lineWidth = 2.5;
+        sigCtx.lineCap = 'round';
+        sigCtx.lineJoin = 'round';
+        sigCtx.strokeStyle = '#0f172a';
+        sigCtx.lineTo(touch.clientX - rect.left, touch.clientY - rect.top);
+        sigCtx.stroke();
+        hasSigned = true;
+      }, { passive: false });
+
+      sigCanvas.addEventListener('touchend', endSign);
+    }
+
+    function resizeSignatureCanvas() {
+      if (!sigCanvas) return;
+      const rect = sigCanvas.getBoundingClientRect();
+      // Set actual drawing buffer size to display size
+      if (sigCanvas.width !== rect.width || sigCanvas.height !== rect.height) {
+        // Save existing signature if present
+        const prevData = appState.signature;
+        sigCanvas.width = rect.width;
+        sigCanvas.height = rect.height;
+
+        if (prevData) {
+          const img = new Image();
+          img.onload = () => {
+            sigCtx.drawImage(img, 0, 0, rect.width, rect.height);
+            document.getElementById('sigPlaceholder').style.display = 'none';
+          };
+          img.src = prevData;
+        }
+      }
+    }
+
+    function startSign(e) {
+      isDrawing = true;
+      const rect = sigCanvas.getBoundingClientRect();
+      sigCtx.beginPath();
+      sigCtx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+      document.getElementById('sigPlaceholder').style.display = 'none';
+    }
+
+    function drawSign(e) {
+      if (!isDrawing) return;
+      const rect = sigCanvas.getBoundingClientRect();
+      sigCtx.lineWidth = 2.5;
+      sigCtx.lineCap = 'round';
+      sigCtx.lineJoin = 'round';
+      sigCtx.strokeStyle = '#0f172a';
+      sigCtx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+      sigCtx.stroke();
+      hasSigned = true;
+    }
+
+    function endSign() {
+      if (isDrawing) {
+        isDrawing = false;
+        if (hasSigned) {
+          appState.signature = sigCanvas.toDataURL('image/png');
+          appState.signedTimestamp = new Date().toLocaleString();
+          document.getElementById('sigTimestamp').textContent = `Signed: ${appState.signedTimestamp}`;
+          triggerAutoSave();
+        }
+      }
+    }
+
+    function clearSignature() {
+      if (!sigCanvas) return;
+      sigCtx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+      document.getElementById('sigPlaceholder').style.display = 'flex';
+      document.getElementById('sigTimestamp').textContent = 'Not signed yet';
+      appState.signature = null;
+      appState.signedTimestamp = null;
+      hasSigned = false;
+      triggerAutoSave();
+      showToast('Signature cleared', 'info');
+    }
+
+    /* ==========================================================================
+       STORAGE & PERSISTENCE
+       ========================================================================== */
+    function triggerAutoSave() {
+      // Gather inputs
+      appState.meta.date = document.getElementById('metaDate').value;
+      appState.meta.day = document.getElementById('metaDay').value;
+      appState.meta.time = document.getElementById('metaTime').value;
+      appState.meta.personnel = document.getElementById('metaPersonnel').value;
+      appState.meta.personnelOther = document.getElementById('metaPersonnelOther').value;
+      appState.meta.batch = document.getElementById('metaBatch').value;
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+        const badge = document.getElementById('saveStatusBadge');
+        badge.classList.remove('hidden');
+      } catch (err) {
+        console.warn('LocalStorage error:', err);
+      }
+    }
+
+    function loadFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          appState = Object.assign(appState, parsed);
+
+          // Populate inputs
+          if (appState.meta.date) document.getElementById('metaDate').value = appState.meta.date;
+          if (appState.meta.day) document.getElementById('metaDay').value = appState.meta.day;
+          if (appState.meta.time) document.getElementById('metaTime').value = appState.meta.time;
+          if (appState.meta.personnel) document.getElementById('metaPersonnel').value = appState.meta.personnel;
+          if (appState.meta.personnelOther) document.getElementById('metaPersonnelOther').value = appState.meta.personnelOther;
+          if (appState.meta.batch) document.getElementById('metaBatch').value = appState.meta.batch;
+
+          setLine(appState.meta.line || 'Line 1');
+          setLevel(appState.meta.level || 'Level 1');
+          handlePersonnelChange(appState.meta.personnel);
+
+          if (appState.signedTimestamp) {
+            document.getElementById('sigTimestamp').textContent = `Signed: ${appState.signedTimestamp}`;
+            hasSigned = true;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load state from localStorage', e);
+      }
+    }
+
+    function confirmResetAll() {
+      showModal({
+        title: 'Clear Checklist Form?',
+        desc: 'This will reset all current inspection values, remarks, and signature for this shift.',
+        icon: 'fa-solid fa-trash-can',
+        iconBg: 'bg-rose-100 text-rose-600',
+        confirmText: 'Reset Form',
+        onConfirm: () => {
+          localStorage.removeItem(STORAGE_KEY);
+          appState.checks = {};
+          appState.signature = null;
+          appState.signedTimestamp = null;
+          appState.meta.batch = '';
+          document.getElementById('metaBatch').value = '';
+          clearSignature();
+          renderAllTabs();
+          switchTab('tab_startup');
+          updateAllBadges();
+          showToast('Checklist successfully reset', 'success');
+        }
+      });
+    }
+
+    /* ==========================================================================
+       EXCEL EXPORT (.xlsx matching multi-sheet plant format)
+       ========================================================================== */
+    function exportToExcel() {
+      try {
+        const wb = XLSX.utils.book_new();
+        const inspectorName = appState.meta.personnel === 'Other' ? appState.meta.personnelOther : appState.meta.personnel;
+
+        // 1. Daily Summary Sheet
+        const summaryRows = [
+          ['ANBROS INDUSTRIES (S) PTE LTD — TUAS PLANT'],
+          ['QA/QC INLINE PRODUCTION INSPECTION SUMMARY'],
+          [],
+          ['Inspection Date:', appState.meta.date, 'Day:', appState.meta.day],
+          ['Time (IN):', appState.meta.time, 'QA Inspector:', inspectorName],
+          ['Line:', appState.meta.line, 'Level:', appState.meta.level],
+          ['Work Order / Batch:', appState.meta.batch || 'N/A'],
+          [],
+          ['SECTION / GATE', 'TOTAL ITEMS', 'PASS', 'FAIL', 'N/A', 'SECTION STATUS']
+        ];
+
+        CHECKLIST_SECTIONS.forEach(sec => {
+          let p = 0, f = 0, na = 0, t = 0;
+          sec.categories.forEach(c => {
+            c.items.forEach(i => {
+              t++;
+              const st = appState.checks[i.id]?.status;
+              if (st === 'PASS') p++;
+              else if (st === 'FAIL') f++;
+              else if (st === 'NA') na++;
+            });
+          });
+          const status = f > 0 ? 'FAIL' : (p + na === t ? 'PASS' : 'INCOMPLETE');
+          summaryRows.push([sec.title, t, p, f, na, status]);
+        });
+
+        summaryRows.push([]);
+        summaryRows.push(['Inspector Sign-off:', hasSigned ? `Signed by ${inspectorName} at ${appState.signedTimestamp}` : 'Pending Signature']);
+
+        const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+        XLSX.utils.book_append_sheet(wb, wsSummary, 'DAILY_SUMMARY');
+
+        // 2. Individual Checkpoint Sheets
+        CHECKLIST_SECTIONS.forEach(sec => {
+          const sheetRows = [
+            [`ANBROS TUAS PLANT — ${sec.title}`],
+            [`Date: ${appState.meta.date}`, `Line: ${appState.meta.line}`, `Level: ${appState.meta.level}`, `WO/Batch: ${appState.meta.batch || '-'}`],
+            [],
+            ['No.', 'Category', 'Inspection Checkpoint Point', 'Status (PASS / FAIL / NA)', 'Remarks & Corrective Action Taken']
+          ];
+
+          let itemIndex = 1;
+          sec.categories.forEach(cat => {
+            cat.items.forEach(item => {
+              const state = appState.checks[item.id] || {};
+              sheetRows.push([
+                itemIndex++,
+                cat.name,
+                item.label,
+                state.status || 'PENDING',
+                state.remarks || ''
+              ]);
+            });
+          });
+
+          const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+          // Set friendly sheet name (max 31 characters, clean title)
+          const cleanSheetName = sec.shortTitle.toUpperCase().replace(/\s+/g, '_');
+          XLSX.utils.book_append_sheet(wb, ws, cleanSheetName);
+        });
+
+        // Generate filename
+        const safeDate = appState.meta.date.replace(/-/g, '');
+        const safeLine = appState.meta.line.replace(/\s+/g, '');
+        const filename = `Tuas_QA_Checklist_${safeLine}_${safeDate}.xlsx`;
+
+        XLSX.writeFile(wb, filename);
+        showToast('Excel report downloaded successfully', 'success');
+      } catch (err) {
+        console.error('Excel Export Error:', err);
+        showToast('Failed to export Excel file', 'error');
+      }
+    }
+
+    /* ==========================================================================
+       PDF EXPORT (jsPDF + autoTable)
+       ========================================================================== */
+    function generatePDF() {
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4'
+        });
+
+        const inspectorName = appState.meta.personnel === 'Other' ? appState.meta.personnelOther : appState.meta.personnel;
+
+        // Top Header Banner
+        doc.setFillColor(16, 39, 66); // Brand dark navy #102742
+        doc.rect(0, 0, 210, 24, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text('ANBROS INDUSTRIES (S) PTE LTD — TUAS PLANT', 14, 10);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(203, 213, 225);
+        doc.text('QA/QC INLINE PRODUCTION INSPECTION REPORT', 14, 16);
+
+        // Metadata Box
+        doc.setDrawColor(226, 232, 240);
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(14, 28, 182, 22, 2, 2, 'FD');
+
+        doc.setFontSize(8);
+        doc.setTextColor(51, 65, 85);
+
+        // Row 1
+        doc.setFont('helvetica', 'bold');
+        doc.text('Inspection Date:', 18, 34);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${appState.meta.date} (${appState.meta.day})`, 45, 34);
+
+        doc.setFont('helvetica', 'bold');
+        doc.text('Time (IN):', 95, 34);
+        doc.setFont('helvetica', 'normal');
+        doc.text(appState.meta.time || '-', 112, 34);
+
+        doc.setFont('helvetica', 'bold');
+        doc.text('QA Inspector:', 140, 34);
+        doc.setFont('helvetica', 'normal');
+        doc.text(inspectorName || '-', 165, 34);
+
+        // Row 2
+        doc.setFont('helvetica', 'bold');
+        doc.text('Line & Floor:', 18, 42);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${appState.meta.line} | ${appState.meta.level}`, 45, 42);
+
+        doc.setFont('helvetica', 'bold');
+        doc.text('WO / Batch:', 95, 42);
+        doc.setFont('helvetica', 'normal');
+        doc.text(appState.meta.batch || 'UNASSIGNED', 115, 42);
+
+        let currentY = 54;
+
+        // Iterate sections and render formatted tables
+        CHECKLIST_SECTIONS.forEach((sec, idx) => {
+          // Table data
+          const bodyData = [];
+          sec.categories.forEach(cat => {
+            cat.items.forEach(item => {
+              const st = appState.checks[item.id] || {};
+              bodyData.push([
+                cat.name,
+                item.label,
+                st.status || 'PENDING',
+                st.remarks || '-'
+              ]);
+            });
+          });
+
+          doc.autoTable({
+            startY: currentY,
+            head: [
+              [{ content: `${idx + 1}. ${sec.title}`, colSpan: 4, styles: { fillColor: [27, 59, 95], textColor: 255, fontStyle: 'bold' } }],
+              ['Category', 'Checkpoint Description', 'Status', 'Remarks / Corrective Action']
+            ],
+            body: bodyData,
+            theme: 'grid',
+            headStyles: {
+              fillColor: [241, 245, 249],
+              textColor: [30, 41, 59],
+              fontSize: 7,
+              fontStyle: 'bold',
+              cellPadding: 1.5
+            },
+            bodyStyles: {
+              fontSize: 6.5,
+              cellPadding: 1.5,
+              textColor: [51, 65, 85]
+            },
+            columnStyles: {
+              0: { cellWidth: 35 },
+              1: { cellWidth: 77 },
+              2: { cellWidth: 20, halign: 'center' },
+              3: { cellWidth: 50 }
+            },
+            didParseCell: function(data) {
+              if (data.column.index === 2 && data.section === 'body') {
+                if (data.cell.raw === 'PASS') {
+                  data.cell.styles.textColor = [16, 185, 129];
+                  data.cell.styles.fontStyle = 'bold';
+                } else if (data.cell.raw === 'FAIL') {
+                  data.cell.styles.textColor = [225, 29, 72];
+                  data.cell.styles.fontStyle = 'bold';
+                } else if (data.cell.raw === 'NA') {
+                  data.cell.styles.textColor = [100, 116, 139];
+                }
+              }
+            },
+            margin: { left: 14, right: 14 }
+          });
+
+          currentY = doc.lastAutoTable.finalY + 6;
+
+          // Check if page overflow requires new page
+          if (currentY > 260 && idx < CHECKLIST_SECTIONS.length - 1) {
+            doc.addPage();
+            currentY = 16;
+          }
+        });
+
+        // Sign-off block
+        if (currentY > 240) {
+          doc.addPage();
+          currentY = 20;
+        }
+
+        doc.setDrawColor(203, 213, 225);
+        doc.roundedRect(14, currentY, 182, 34, 2, 2, 'S');
+
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 41, 59);
+        doc.text('QA INSPECTOR VERIFICATION & SIGN-OFF', 18, currentY + 6);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.text(`Inspector: ${inspectorName}`, 18, currentY + 12);
+        doc.text(`Date & Time: ${appState.signedTimestamp || new Date().toLocaleString()}`, 18, currentY + 17);
+        doc.text('Declaration: I confirm all inline checks were conducted in compliance with Tuas Plant SOP.', 18, currentY + 23);
+
+        // Add signature image if available
+        if (appState.signature) {
+          try {
+            doc.addImage(appState.signature, 'PNG', 135, currentY + 4, 50, 24);
+          } catch (e) {
+            console.warn('Could not render signature on PDF', e);
+          }
+        } else {
+          doc.setFont('helvetica', 'italic');
+          doc.setTextColor(148, 163, 184);
+          doc.text('[Digitally unsigned]', 145, currentY + 18);
+        }
+
+        // Save PDF
+        const safeDate = appState.meta.date.replace(/-/g, '');
+        const filename = `Tuas_QA_Report_${appState.meta.line.replace(/\s+/g, '')}_${safeDate}.pdf`;
+        doc.save(filename);
+        showToast('PDF inspection report generated', 'success');
+      } catch (err) {
+        console.error('PDF Generation Error:', err);
+        showToast('Failed to generate PDF', 'error');
+      }
+    }
+
+    /* ==========================================================================
+       SHARE REPORT (WhatsApp / Mobile Share Sheet / Email)
+       ========================================================================== */
+    async function shareInspectionReport() {
+      const inspectorName = appState.meta.personnel === 'Other' ? appState.meta.personnelOther : appState.meta.personnel;
+      
+      // Calculate summary metrics
+      let pass = 0, fail = 0, total = 0;
+      let failureNotes = [];
+
+      CHECKLIST_SECTIONS.forEach(sec => {
+        sec.categories.forEach(cat => {
+          cat.items.forEach(item => {
+            total++;
+            const s = appState.checks[item.id]?.status;
+            if (s === 'PASS') pass++;
+            if (s === 'FAIL') {
+              fail++;
+              const rem = appState.checks[item.id]?.remarks ? ` -> ${appState.checks[item.id].remarks}` : '';
+              failureNotes.push(`• [${sec.shortTitle}] ${item.label}${rem}`);
+            }
+          });
+        });
+      });
+
+      const textBody = 
+`*ANBROS INDUSTRIES (S) PTE LTD — TUAS PLANT*
+*QA/QC INLINE PRODUCTION INSPECTION*
+----------------------------------------
+📅 *Date:* ${appState.meta.date} (${appState.meta.day})
+⏰ *Time:* ${appState.meta.time}
+🏭 *Line / Floor:* ${appState.meta.line} | ${appState.meta.level}
+📦 *Work Order / Batch:* ${appState.meta.batch || 'N/A'}
+👤 *Inspector:* ${inspectorName}
+
+*SUMMARY METRICS:*
+- Total Points: ${total}
+- Passed: ${pass}
+- Deficiencies / Fails: ${fail}
+- Status: ${fail > 0 ? '⚠️ DEFECTS LOGGED (Action required)' : '✅ ALL CHECKS CLEARED'}
+${failureNotes.length > 0 ? '\n*DEFECTS / REMARKS:*\n' + failureNotes.join('\n') : ''}
+
+*Sign-off:* ${hasSigned ? `Signed by ${inspectorName}` : 'Pending signature'}
+----------------------------------------`;
+
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: `Tuas QA Inspection - ${appState.meta.line}`,
+            text: textBody
+          });
+          showToast('Inspection report shared', 'success');
+          return;
+        } catch (e) {
+          // If user cancelled, do nothing
+          if (e.name !== 'AbortError') {
+            console.log('Share API error, fallback to WhatsApp', e);
+          }
+        }
+      }
+
+      // Fallback: Copy to clipboard and open WhatsApp
+      copyToClipboard(textBody);
+      const encoded = encodeURIComponent(textBody);
+      const waUrl = `https://api.whatsapp.com/send?text=${encoded}`;
+      
+      showToast('Summary copied to clipboard! Opening WhatsApp...', 'info');
+      setTimeout(() => {
+        window.open(waUrl, '_blank');
+      }, 500);
+    }
+
+    function copyToClipboard(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'absolute';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+
+    /* ==========================================================================
+       UI UTILITIES: TOASTS & MODALS
+       ========================================================================== */
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      
+      let bg = 'bg-slate-800 text-white';
+      let icon = 'fa-solid fa-circle-info text-blue-400';
+      if (type === 'success') {
+        bg = 'bg-emerald-800 text-white border border-emerald-600';
+        icon = 'fa-solid fa-circle-check text-emerald-300';
+      } else if (type === 'error') {
+        bg = 'bg-rose-800 text-white border border-rose-600';
+        icon = 'fa-solid fa-triangle-exclamation text-rose-300';
+      }
+
+      toast.className = `${bg} pointer-events-auto px-4 py-2.5 rounded-xl shadow-lg text-xs font-semibold flex items-center space-x-2 transition-all transform translate-y-2 opacity-0 duration-200`;
+      toast.innerHTML = `<i class="${icon}"></i><span>${msg}</span>`;
+
+      container.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-2');
+        setTimeout(() => toast.remove(), 250);
+      }, 3000);
+    }
+
+    let modalConfirmCallback = null;
+
+    function showModal({ title, desc, icon, iconBg, confirmText, onConfirm }) {
+      document.getElementById('modalTitle').textContent = title;
+      document.getElementById('modalDesc').textContent = desc;
+      
+      const iconWrap = document.getElementById('modalIcon');
+      iconWrap.className = `w-12 h-12 rounded-full flex items-center justify-center text-xl mb-3 ${iconBg || 'bg-rose-100 text-rose-600'}`;
+      iconWrap.innerHTML = `<i class="${icon || 'fa-solid fa-triangle-exclamation'}"></i>`;
+
+      const confBtn = document.getElementById('modalBtnConfirm');
+      confBtn.textContent = confirmText || 'Confirm';
+
+      modalConfirmCallback = onConfirm;
+      confBtn.onclick = () => {
+        if (modalConfirmCallback) modalConfirmCallback();
+        closeModal();
+      };
+
+      document.getElementById('appModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('appModal').classList.add('hidden');
+      modalConfirmCallback = null;
+    }
+
+    function escapeHtml(string) {
+      if (!string) return '';
+      return String(string).replace(/[&<>"']/g, function(s) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[s];
+      });
+    }
+  </script>
+</body>
+</html>
